@@ -6,6 +6,7 @@ import uvicorn
 from src.config import API_HOST, API_PORT, API_ROOT_PATH
 from src.crypto_service import crypto_service
 from src.cache import cache_manager
+from src.prediction_service import prediction_service
 
 
 app = FastAPI(
@@ -30,11 +31,13 @@ async def root():
     """API根路径"""
     return {
         "message": "Crypto Market Data API",
-        "version": "1.0.0",
+        "version": "2.0.0",
         "endpoints": {
             "/api/v1/crypto/prices": "获取所有支持的加密货币价格",
             "/api/v1/crypto/{symbol}": "获取特定加密货币详情",
-            "/api/v1/crypto/supported": "获取支持的加密货币列表"
+            "/api/v1/crypto/supported": "获取支持的加密货币列表",
+            "/api/v1/predict/{symbol}": "预测特定加密货币价格",
+            "/api/v1/predict/btc-sol-doge": "批量预测BTC、SOL、DOGE价格"
         }
     }
 
@@ -78,6 +81,65 @@ async def get_supported_cryptos():
 async def health_check():
     """健康检查"""
     return {"status": "healthy", "service": "crypto-market-api"}
+
+
+@app.get("/api/v1/predict/{symbol}")
+async def predict_crypto(symbol: str, days: int = 7):
+    """
+    预测特定加密货币价格
+
+    Args:
+        symbol: 加密货币符号 (BTC, ETH, DOGE, SOL等)
+        days: 预测天数 (3, 7, 30)，默认7天
+
+    Returns:
+        预测结果
+    """
+    if days not in [3, 7, 30]:
+        raise HTTPException(
+            status_code=400,
+            detail="days must be 3, 7, or 30"
+        )
+
+    # 验证是否是支持的加密货币
+    from src.config import CRYPTO_SYMBOLS
+    crypto_id = None
+    for cid, csym in CRYPTO_SYMBOLS.items():
+        if csym.upper() == symbol.upper():
+            crypto_id = cid
+            break
+
+    if not crypto_id:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Cryptocurrency {symbol} not supported"
+        )
+
+    prediction = await prediction_service.predict_crypto_price(crypto_id, days)
+    return {"data": prediction}
+
+
+@app.get("/api/v1/predict/btc-sol-doge")
+async def predict_btc_sol_doge(days: int = 7):
+    """
+    批量预测BTC、SOL、DOGE价格
+
+    Args:
+        days: 预测天数 (3, 7, 30)，默认7天
+
+    Returns:
+        批量预测结果
+    """
+    if days not in [3, 7, 30]:
+        raise HTTPException(
+            status_code=400,
+            detail="days must be 3, 7, or 30"
+        )
+
+    crypto_ids = ["bitcoin", "solana", "dogecoin"]
+    predictions = await prediction_service.predict_multiple_cryptos(crypto_ids, days)
+
+    return predictions
 
 
 if __name__ == "__main__":
